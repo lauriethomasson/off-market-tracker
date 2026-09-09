@@ -197,7 +197,7 @@ export default function MapPageClient() {
             Add Property
           </button>
 
-          <div className="relative w-48 rounded-md bg-white/90 px-3 py-2.5 shadow-sm backdrop-blur sm:w-52">
+          <div className="relative z-20 w-48 rounded-md bg-white/90 px-3 py-2.5 shadow-sm backdrop-blur sm:w-52">
             <div className="flex items-center gap-1.5">
               <svg
                 aria-hidden="true"
