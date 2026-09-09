@@ -270,12 +270,29 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
         const map = mapRef.current;
         if (!map) return;
 
-        const existing = markersByIdRef.current.get(property.id);
-        existing?.remove();
-        markersByIdRef.current.delete(property.id);
-
         const stored = propertiesByIdRef.current.get(property.id)!;
-        if (!matchesFilter(stored, lastFilterRef.current)) return;
+        const shouldShow = matchesFilter(stored, lastFilterRef.current);
+        const existing = markersByIdRef.current.get(property.id);
+
+        if (!shouldShow) {
+          existing?.remove();
+          markersByIdRef.current.delete(property.id);
+          return;
+        }
+
+        if (existing) {
+          // Mutate the existing marker's DOM element in place rather than
+          // remove() + recreate: swapping the node out from under a
+          // stationary cursor leaves it in a stale :hover state (and the
+          // pointer cursor doesn't update) until the next mousemove.
+          const el = existing.getElement();
+          el.title = property.address;
+          el.setAttribute("aria-label", `View ${property.address}`);
+          el.dataset.status = normalizePropertyStatus(property.status);
+          el.innerHTML = createPinSvg(pinColorForStatus(property.status));
+          existing.setLngLat([property.longitude, property.latitude]);
+          return;
+        }
 
         const marker = createPropertyMarker(map, property, selectProperty);
         markersByIdRef.current.set(property.id, marker);
