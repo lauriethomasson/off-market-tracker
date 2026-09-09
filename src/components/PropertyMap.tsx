@@ -35,10 +35,6 @@ export type PropertyMarkerData = {
 
 export type PropertyFilter = {
   query: string;
-  floorMin?: number;
-  floorMax?: number;
-  buildingMin?: number;
-  buildingMax?: number;
 };
 
 export type PropertyMapHandle = {
@@ -65,49 +61,18 @@ type PropertyMarkerRow = {
   building: string | null;
 };
 
-/** Extracts the first number in a free-text building-size string, e.g. "25,000 sq ft" -> 25000. */
-function parseLeadingNumber(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = value.replace(/,/g, "").match(/\d+(\.\d+)?/);
-  if (!match) return null;
-  return Number(match[0]);
-}
-
 function matchesFilter(
   property: PropertyMarkerRow,
   filter: PropertyFilter,
 ): boolean {
   const query = filter.query.trim().toLowerCase();
-  if (query) {
-    const haystack = [property.address, property.postcode, property.building]
-      .filter((value): value is string => Boolean(value))
-      .join(" ")
-      .toLowerCase();
-    if (!haystack.includes(query)) return false;
-  }
+  if (!query) return true;
 
-  if (filter.floorMin != null || filter.floorMax != null) {
-    if (property.size_sqft == null) return false;
-    if (filter.floorMin != null && property.size_sqft < filter.floorMin) {
-      return false;
-    }
-    if (filter.floorMax != null && property.size_sqft > filter.floorMax) {
-      return false;
-    }
-  }
-
-  if (filter.buildingMin != null || filter.buildingMax != null) {
-    const buildingSize = parseLeadingNumber(property.building);
-    if (buildingSize == null) return false;
-    if (filter.buildingMin != null && buildingSize < filter.buildingMin) {
-      return false;
-    }
-    if (filter.buildingMax != null && buildingSize > filter.buildingMax) {
-      return false;
-    }
-  }
-
-  return true;
+  const haystack = [property.address, property.postcode, property.building]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
 }
 
 /** Transit / transport layers should stay visible even if they look POI-like. */
