@@ -28,6 +28,17 @@ export type PropertyMarkerData = {
   latitude: number;
   longitude: number;
   status?: PropertyStatus | null;
+  postcode?: string | null;
+  size_sqft?: number | null;
+  building?: string | null;
+};
+
+export type PropertyFilter = {
+  query: string;
+  floorMin?: number;
+  floorMax?: number;
+  buildingMin?: number;
+  buildingMax?: number;
 };
 
 export type PropertyMapHandle = {
@@ -35,6 +46,7 @@ export type PropertyMapHandle = {
   updateMarker: (property: PropertyMarkerData) => void;
   removeMarker: (propertyId: string) => void;
   flyTo: (coords: { latitude: number; longitude: number }) => void;
+  applyFilter: (filter: PropertyFilter) => void;
 };
 
 type PropertyMapProps = {
@@ -48,7 +60,55 @@ type PropertyMarkerRow = {
   latitude: number | null;
   longitude: number | null;
   status: PropertyStatus | null;
+  postcode: string | null;
+  size_sqft: number | null;
+  building: string | null;
 };
+
+/** Extracts the first number in a free-text building-size string, e.g. "25,000 sq ft" -> 25000. */
+function parseLeadingNumber(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const match = value.replace(/,/g, "").match(/\d+(\.\d+)?/);
+  if (!match) return null;
+  return Number(match[0]);
+}
+
+function matchesFilter(
+  property: PropertyMarkerRow,
+  filter: PropertyFilter,
+): boolean {
+  const query = filter.query.trim().toLowerCase();
+  if (query) {
+    const haystack = [property.address, property.postcode, property.building]
+      .filter((value): value is string => Boolean(value))
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(query)) return false;
+  }
+
+  if (filter.floorMin != null || filter.floorMax != null) {
+    if (property.size_sqft == null) return false;
+    if (filter.floorMin != null && property.size_sqft < filter.floorMin) {
+      return false;
+    }
+    if (filter.floorMax != null && property.size_sqft > filter.floorMax) {
+      return false;
+    }
+  }
+
+  if (filter.buildingMin != null || filter.buildingMax != null) {
+    const buildingSize = parseLeadingNumber(property.building);
+    if (buildingSize == null) return false;
+    if (filter.buildingMin != null && buildingSize < filter.buildingMin) {
+      return false;
+    }
+    if (filter.buildingMax != null && buildingSize > filter.buildingMax) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 /** Transit / transport layers should stay visible even if they look POI-like. */
 function isTransitOrTransportLayer(
@@ -173,6 +233,8 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<maplibregl.Map | null>(null);
     const markersByIdRef = useRef(new Map<string, maplibregl.Marker>());
+    const propertiesByIdRef = useRef(new Map<string, PropertyMarkerRow>());
+    const lastFilterRef = useRef<PropertyFilter>({ query: "" });
     const onSelectRef = useRef(onPropertySelect);
     const onBackgroundClickRef = useRef(onMapBackgroundClick);
 
@@ -189,23 +251,53 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
     }
 
     useImperativeHandle(ref, () => {
+      function storeProperty(property: PropertyMarkerData) {
+        propertiesByIdRef.current.set(property.id, {
+          id: property.id,
+          address: property.address,
+          latitude: property.latitude,
+          longitude: property.longitude,
+          status: property.status ?? null,
+          postcode: property.postcode ?? null,
+          size_sqft: property.size_sqft ?? null,
+          building: property.building ?? null,
+        });
+      }
+
       function updateMarker(property: PropertyMarkerData) {
+        storeProperty(property);
+
         const map = mapRef.current;
         if (!map) return;
 
         const existing = markersByIdRef.current.get(property.id);
         existing?.remove();
+        markersByIdRef.current.delete(property.id);
+
+        const stored = propertiesByIdRef.current.get(property.id)!;
+        if (!matchesFilter(stored, lastFilterRef.current)) return;
 
         const marker = createPropertyMarker(map, property, selectProperty);
         markersByIdRef.current.set(property.id, marker);
       }
 
       function addMarker(property: PropertyMarkerData) {
+        storeProperty(property);
+
         const map = mapRef.current;
         if (!map) return;
 
         if (markersByIdRef.current.has(property.id)) {
           updateMarker(property);
+          return;
+        }
+
+        if (
+          !matchesFilter(
+            propertiesByIdRef.current.get(property.id)!,
+            lastFilterRef.current,
+          )
+        ) {
           return;
         }
 
@@ -221,6 +313,7 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
         const marker = markersByIdRef.current.get(propertyId);
         marker?.remove();
         markersByIdRef.current.delete(propertyId);
+        propertiesByIdRef.current.delete(propertyId);
       }
 
       function flyTo(coords: { latitude: number; longitude: number }) {
@@ -233,7 +326,39 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
         });
       }
 
-      return { addMarker, updateMarker, removeMarker, flyTo };
+      function applyFilter(filter: PropertyFilter) {
+        lastFilterRef.current = filter;
+
+        const map = mapRef.current;
+        if (!map) return;
+
+        for (const property of propertiesByIdRef.current.values()) {
+          if (property.latitude == null || property.longitude == null) continue;
+
+          const shouldShow = matchesFilter(property, filter);
+          const hasMarker = markersByIdRef.current.has(property.id);
+
+          if (shouldShow && !hasMarker) {
+            const marker = createPropertyMarker(
+              map,
+              {
+                id: property.id,
+                address: property.address,
+                latitude: property.latitude,
+                longitude: property.longitude,
+                status: property.status,
+              },
+              selectProperty,
+            );
+            markersByIdRef.current.set(property.id, marker);
+          } else if (!shouldShow && hasMarker) {
+            markersByIdRef.current.get(property.id)?.remove();
+            markersByIdRef.current.delete(property.id);
+          }
+        }
+      }
+
+      return { addMarker, updateMarker, removeMarker, flyTo, applyFilter };
     });
 
     useEffect(() => {
@@ -250,6 +375,7 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
 
       const signal = { cancelled: false };
       const markersById = markersByIdRef.current;
+      const propertiesById = propertiesByIdRef.current;
 
       const map = new maplibregl.Map({
         container,
@@ -278,7 +404,9 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
 
           const { data, error } = await supabase
             .from("properties")
-            .select("id, address, latitude, longitude, status");
+            .select(
+              "id, address, latitude, longitude, status, postcode, size_sqft, building",
+            );
 
           if (signal.cancelled) return;
 
@@ -292,6 +420,9 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
           for (const property of properties) {
             if (property.latitude == null || property.longitude == null) continue;
             if (markersById.has(property.id)) continue;
+
+            propertiesById.set(property.id, property);
+            if (!matchesFilter(property, lastFilterRef.current)) continue;
 
             const marker = createPropertyMarker(
               map,
@@ -315,6 +446,7 @@ const PropertyMap = forwardRef<PropertyMapHandle, PropertyMapProps>(
           marker.remove();
         }
         markersById.clear();
+        propertiesById.clear();
         mapRef.current = null;
         map.remove();
       };

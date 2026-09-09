@@ -51,6 +51,9 @@ export type CreatedPropertyMarker = {
   latitude: number;
   longitude: number;
   status: PropertyStatus;
+  postcode?: string | null;
+  size_sqft?: number | null;
+  building?: string | null;
 };
 
 type AddPropertyModalProps = {
@@ -530,12 +533,16 @@ export default function AddPropertyModal({
             .from("properties")
             .update(payload)
             .eq("id", propertyToEdit.id)
-            .select("id, address, latitude, longitude, status")
+            .select(
+              "id, address, latitude, longitude, status, postcode, size_sqft, building",
+            )
             .single()
         : supabase
             .from("properties")
             .insert(payload)
-            .select("id, address, latitude, longitude, status")
+            .select(
+              "id, address, latitude, longitude, status, postcode, size_sqft, building",
+            )
             .single();
 
       const { data: property, error: saveError } = await mutation;
@@ -571,6 +578,9 @@ export default function AddPropertyModal({
         latitude: property.latitude,
         longitude: property.longitude,
         status: (property.status ?? form.status) as PropertyStatus,
+        postcode: property.postcode,
+        size_sqft: property.size_sqft,
+        building: property.building,
       };
 
       if (process.env.NODE_ENV !== "production") {
