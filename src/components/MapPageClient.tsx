@@ -127,7 +127,7 @@ export default function MapPageClient() {
   return (
     <>
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 p-4 sm:p-6">
-        <div className="pointer-events-auto flex flex-col items-start gap-3">
+        <div className="pointer-events-auto flex w-fit flex-col items-start gap-3">
           <div className="rounded-md bg-white/90 px-4 py-3 shadow-sm backdrop-blur">
             <p className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
               Off-Market Tracker
